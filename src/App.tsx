@@ -24,7 +24,7 @@ function App() {
     };
   }, []);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = () => {
     // Prevent dragging if clicking on text to allow selection if needed
     // though for a widget, grab anywhere is fine.
     getCurrentWindow().startDragging();
