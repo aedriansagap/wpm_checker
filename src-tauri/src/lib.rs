@@ -2,7 +2,7 @@ use evdev::{Device, Key};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::Emitter;
 use tokio::time::sleep;
 
 #[derive(Clone, serde::Serialize)]
