@@ -1,9 +1,14 @@
-use evdev::{Device, Key};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tokio::time::sleep;
+
+#[cfg(target_os = "linux")]
+use evdev::{Device, Key};
+
+#[cfg(target_os = "windows")]
+use rdev::{listen, Event, EventType};
 
 #[derive(Clone, serde::Serialize)]
 struct WpmPayload {
@@ -44,27 +49,24 @@ impl WpmState {
         self.cleanup(now);
         
         let keys_in_window = self.keystrokes.len() as u32;
-        // WPM = (keys / 5) / time_in_minutes
-        // Window is 15 seconds, so time_in_minutes = 0.25
-        // WPM = (keys / 5) * 4 = keys * 0.8
         let current_wpm = (keys_in_window as f32 * 0.8) as u32;
-        
         let raw_wpm = current_wpm; 
         
         (current_wpm, raw_wpm)
     }
 }
 
-fn find_keyboard() -> Option<Device> {
-    for (_, device) in evdev::enumerate() {
-        if device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_A) && keys.contains(Key::KEY_ENTER)) {
-            return Some(device);
-        }
-    }
-    None
-}
-
+#[cfg(target_os = "linux")]
 fn start_keylogger(state: Arc<Mutex<WpmState>>) {
+    fn find_keyboard() -> Option<Device> {
+        for (_, device) in evdev::enumerate() {
+            if device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_A) && keys.contains(Key::KEY_ENTER)) {
+                return Some(device);
+            }
+        }
+        None
+    }
+
     std::thread::spawn(move || {
         let mut device = match find_keyboard() {
             Some(d) => d,
@@ -93,6 +95,28 @@ fn start_keylogger(state: Arc<Mutex<WpmState>>) {
             }
         }
     });
+}
+
+#[cfg(target_os = "windows")]
+fn start_keylogger(state: Arc<Mutex<WpmState>>) {
+    std::thread::spawn(move || {
+        let callback = move |event: Event| {
+            if let EventType::KeyPress(_) = event.event_type {
+                if let Ok(mut state_lock) = state.lock() {
+                    state_lock.add_keystroke();
+                }
+            }
+        };
+
+        if let Err(error) = listen(callback) {
+            println!("Error listening to keyboard: {:?}", error);
+        }
+    });
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn start_keylogger(_state: Arc<Mutex<WpmState>>) {
+    println!("Platform not supported for global keylogging.");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
